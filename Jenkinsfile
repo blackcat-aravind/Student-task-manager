@@ -104,7 +104,8 @@ pipeline {
                 bat 'docker run -d -p %CONTAINER_PORT%:%NGINX_PORT% --name %APP_NAME% %DOCKER_IMAGE%'
 
                 // Wait for container to fully start
-                bat 'timeout /t 3 /nobreak > NUL'
+                // Using ping to localhost as a delay (Windows-compatible)
+                bat 'ping 127.0.0.1 -n 4 > NUL'
 
                 // Verify container is actually running after startup
                 echo 'Verifying container is running...'
