@@ -59,25 +59,6 @@ pipeline {
             steps {
                 echo 'Stage 3: Building Docker image...'
 
-                // Check if Docker image already exists
-                // docker images returns the image if it exists, otherwise empty
-                // ERRORLEVEL 0 means image was found, otherwise it doesn't exist
-                echo 'Checking if image already exists...'
-                bat '''
-                docker images --format "{{.Repository}}" | findstr /C:"%DOCKER_IMAGE%" > NUL
-                if %ERRORLEVEL% equ 0 (
-                    echo Image %DOCKER_IMAGE% exists, removing it...
-                    docker rmi %DOCKER_IMAGE% > NUL 2>&1
-                    if %ERRORLEVEL% equ 0 (
-                        echo Successfully removed existing image
-                    ) else (
-                        echo Warning: Could not remove image, continuing...
-                    )
-                ) else (
-                    echo No existing image found, will create new one...
-                )
-                '''
-
                 // Build the Docker image
                 // -t: tags the image with the name (student-task-manager)
                 // .: uses the current directory as build context (where Dockerfile is located)
@@ -85,9 +66,9 @@ pipeline {
                 bat 'docker build -t %DOCKER_IMAGE% .'
 
                 // Verify the image was created successfully
-                // List all images matching our image name
-                echo 'Verifying image was created...'
-                bat 'docker images %DOCKER_IMAGE%'
+                // This command lists images and filters by name
+                echo 'Verifying Docker image was created...'
+                bat 'docker image ls --filter "reference=%DOCKER_IMAGE%"'
 
                 echo 'Docker image built successfully!'
             }
@@ -98,32 +79,36 @@ pipeline {
             steps {
                 echo 'Stage 4: Deploying Docker container...'
 
-                // Stop and remove existing container if it exists
-                // Using || true equivalent to prevent pipeline failure if container doesn't exist
-                // Windows batch IF EXIST checks for container, docker stop/rm with || true
+                // Check if container already exists using Docker's native filter
+                // docker ps -a lists all containers, --filter filters by name
+                // We save output to a variable to check if container exists
+                echo 'Checking if container already exists...'
                 bat '''
-                docker ps -a --format "{{.Names}}" | findstr /C:"%APP_NAME%" > NUL
-                if %ERRORLEVEL% equ 0 (
-                    echo Stopping existing container...
-                    docker stop %APP_NAME% > NUL 2>&1 || echo Container was not running
+                for /f "delims=" %%i in ('docker ps -a --filter "name=%APP_NAME%" -q') do set CONTAINER_ID=%%i
+                if defined CONTAINER_ID (
+                    echo Container %APP_NAME% exists, stopping it...
+                    docker stop %APP_NAME% > NUL 2>&1
                     echo Removing existing container...
-                    docker rm %APP_NAME% > NUL 2>&1 || echo Container removal skipped
+                    docker rm %APP_NAME% > NUL 2>&1
                 ) else (
-                    echo No existing container found, creating new one...
+                    echo No existing container found, will create new one...
                 )
+                set "CONTAINER_ID="
                 '''
 
                 // Run the Docker container
                 // -d: detached mode (runs in background)
-                // -p: port mapping (host:container)
-                // --name: name the container
+                // -p: port mapping (host:container) - maps port 8080 on host to port 80 in container
+                // --name: assigns a name to the container for easy reference
+                echo 'Starting new container...'
                 bat 'docker run -d -p %CONTAINER_PORT%:%NGINX_PORT% --name %APP_NAME% %DOCKER_IMAGE%'
 
-                // Wait a moment for container to start (Windows timeout)
-                bat 'timeout /t 5 /nobreak > NUL'
+                // Wait for container to fully start
+                bat 'timeout /t 3 /nobreak > NUL'
 
-                // Verify container is running
-                bat 'docker ps --filter "name=%APP_NAME%"'
+                // Verify container is actually running after startup
+                echo 'Verifying container is running...'
+                bat 'docker ps --filter "status=running" --filter "name=%APP_NAME%"'
 
                 echo 'Container deployed successfully!'
                 echo "Application available at: http://localhost:%CONTAINER_PORT%"
