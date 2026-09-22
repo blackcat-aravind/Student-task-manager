@@ -80,8 +80,9 @@ pipeline {
 
                 // Stop and remove existing container if it exists
                 // Using || true to prevent pipeline failure if container doesn't exist
+                // Note: \${APP_NAME} escapes the first $ for shell; ${APP_NAME} is Groovy interpolation
                 sh """
-                    if docker ps -a --format '{{.Names}}' | grep -q '^${APP_NAME}$'; then
+                    if docker ps -a --format '{{.Names}}' | grep -q '^\${APP_NAME}\$'; then
                         echo 'Stopping existing container...'
                         docker stop ${APP_NAME} || true
                         echo 'Removing existing container...'
