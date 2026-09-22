@@ -59,16 +59,34 @@ pipeline {
             steps {
                 echo 'Stage 3: Building Docker image...'
 
-                // Remove existing image if it exists (ignore errors)
-                // Windows: redirect NUL to suppress error output
-                bat 'docker rmi %DOCKER_IMAGE% 2> NUL || echo No existing image to remove'
+                // Check if Docker image already exists
+                // docker images returns the image if it exists, otherwise empty
+                // ERRORLEVEL 0 means image was found, otherwise it doesn't exist
+                echo 'Checking if image already exists...'
+                bat '''
+                docker images --format "{{.Repository}}" | findstr /C:"%DOCKER_IMAGE%" > NUL
+                if %ERRORLEVEL% equ 0 (
+                    echo Image %DOCKER_IMAGE% exists, removing it...
+                    docker rmi %DOCKER_IMAGE% > NUL 2>&1
+                    if %ERRORLEVEL% equ 0 (
+                        echo Successfully removed existing image
+                    ) else (
+                        echo Warning: Could not remove image, continuing...
+                    )
+                ) else (
+                    echo No existing image found, will create new one...
+                )
+                '''
 
                 // Build the Docker image
-                // -t tags the image with the name
-                // . indicates the build context (current directory)
+                // -t: tags the image with the name (student-task-manager)
+                // .: uses the current directory as build context (where Dockerfile is located)
+                echo 'Building Docker image from Dockerfile...'
                 bat 'docker build -t %DOCKER_IMAGE% .'
 
-                // Verify the image was created
+                // Verify the image was created successfully
+                // List all images matching our image name
+                echo 'Verifying image was created...'
                 bat 'docker images %DOCKER_IMAGE%'
 
                 echo 'Docker image built successfully!'
