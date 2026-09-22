@@ -1,11 +1,12 @@
 // Student Task Manager - Jenkins Pipeline
 // This pipeline demonstrates CI/CD for a simple web application
+// Designed for Windows Jenkins environment
 
 pipeline {
     // Agent can be 'any' or specify a label
     agent any
 
-    // Define environment variables if needed
+    // Define environment variables for the application
     environment {
         APP_NAME = 'student-task-manager'
         DOCKER_IMAGE = 'student-task-manager'
@@ -20,12 +21,12 @@ pipeline {
                 // Display a message to the user
                 echo 'Stage 1: Checking out code from GitHub...'
 
-                // Clone the repository (shallow clone for speed)
+                // Clone the repository using Jenkins SCM
                 checkout scm
 
-                // List the files to verify checkout
+                // List the files to verify checkout (Windows command)
                 echo 'Files fetched:'
-                sh 'ls -la'
+                bat 'dir /b'
             }
         }
 
@@ -34,20 +35,20 @@ pipeline {
             steps {
                 echo 'Stage 2: Validating application files...'
 
-                // Check if index.html exists
+                // Check if index.html exists using Windows IF EXIST
                 echo 'Checking for index.html...'
-                sh 'test -f index.html && echo "index.html found" || exit 1'
+                bat 'if exist index.html (echo index.html found) else (exit /b 1)'
 
                 // Check if style.css exists
                 echo 'Checking for style.css...'
-                sh 'test -f style.css && echo "style.css found" || exit 1'
+                bat 'if exist style.css (echo style.css found) else (exit /b 1)'
 
                 // Check if script.js exists
                 echo 'Checking for script.js...'
-                sh 'test -f script.js && echo "script.js found" || exit 1'
+                bat 'if exist script.js (echo script.js found) else (exit /b 1)'
 
-                // Verify file size is not empty
-                sh 'test -s index.html && test -s style.css && test -s script.js'
+                // Verify files are not empty (Windows approach)
+                bat 'for %%F in (index.html style.css script.js) do (if %%~zF==0 exit /b 1)'
 
                 echo 'All required files validated successfully!'
             }
@@ -59,15 +60,16 @@ pipeline {
                 echo 'Stage 3: Building Docker image...'
 
                 // Remove existing image if it exists (ignore errors)
-                sh "docker rmi ${DOCKER_IMAGE} 2>/dev/null || true"
+                // Windows: redirect NUL to suppress error output
+                bat 'docker rmi %DOCKER_IMAGE% 2> NUL || echo No existing image to remove'
 
                 // Build the Docker image
                 // -t tags the image with the name
                 // . indicates the build context (current directory)
-                sh "docker build -t ${DOCKER_IMAGE} ."
+                bat 'docker build -t %DOCKER_IMAGE% .'
 
                 // Verify the image was created
-                sh "docker images ${DOCKER_IMAGE}"
+                bat 'docker images %DOCKER_IMAGE%'
 
                 echo 'Docker image built successfully!'
             }
@@ -79,33 +81,34 @@ pipeline {
                 echo 'Stage 4: Deploying Docker container...'
 
                 // Stop and remove existing container if it exists
-                // Using || true to prevent pipeline failure if container doesn't exist
-                // Note: \${APP_NAME} escapes the first $ for shell; ${APP_NAME} is Groovy interpolation
-                sh """
-                    if docker ps -a --format '{{.Names}}' | grep -q '^\${APP_NAME}\$'; then
-                        echo 'Stopping existing container...'
-                        docker stop ${APP_NAME} || true
-                        echo 'Removing existing container...'
-                        docker rm ${APP_NAME} || true
-                    else
-                        echo 'No existing container found, creating new one...'
-                    fi
-                """
+                // Using || true equivalent to prevent pipeline failure if container doesn't exist
+                // Windows batch IF EXIST checks for container, docker stop/rm with || true
+                bat '''
+                docker ps -a --format "{{.Names}}" | findstr /C:"%APP_NAME%" > NUL
+                if %ERRORLEVEL% equ 0 (
+                    echo Stopping existing container...
+                    docker stop %APP_NAME% > NUL 2>&1 || echo Container was not running
+                    echo Removing existing container...
+                    docker rm %APP_NAME% > NUL 2>&1 || echo Container removal skipped
+                ) else (
+                    echo No existing container found, creating new one...
+                )
+                '''
 
                 // Run the Docker container
                 // -d: detached mode (runs in background)
                 // -p: port mapping (host:container)
                 // --name: name the container
-                sh "docker run -d -p ${CONTAINER_PORT}:${NGINX_PORT} --name ${APP_NAME} ${DOCKER_IMAGE}"
+                bat 'docker run -d -p %CONTAINER_PORT%:%NGINX_PORT% --name %APP_NAME% %DOCKER_IMAGE%'
 
-                // Wait a moment for container to start
-                sleep 5
+                // Wait a moment for container to start (Windows timeout)
+                bat 'timeout /t 5 /nobreak > NUL'
 
                 // Verify container is running
-                sh "docker ps --filter 'name=${APP_NAME}'"
+                bat 'docker ps --filter "name=%APP_NAME%"'
 
                 echo 'Container deployed successfully!'
-                echo "Application available at: http://localhost:${CONTAINER_PORT}"
+                echo "Application available at: http://localhost:%CONTAINER_PORT%"
             }
         }
     }
@@ -119,12 +122,12 @@ pipeline {
 
         // Run only if the build succeeds
         success {
-            echo '✓ Build and deployment successful!'
+            echo 'Build and deployment successful!'
         }
 
         // Run only if the build fails
         failure {
-            echo '✗ Build or deployment failed. Check logs above.'
+            echo 'Build or deployment failed. Check logs above.'
         }
     }
 }
